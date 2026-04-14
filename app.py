@@ -40,7 +40,14 @@ with st.sidebar:
     if uploaded_file is not None:
         try:
             df_upload = pd.read_csv(uploaded_file)
-            df_upload['timestamp'] = datetime.now()
+            
+            # Create a realistic timeline using the 'time' column (seconds)
+            if 'time' in df_upload.columns:
+                base_time = datetime.now()
+                df_upload['timestamp'] = df_upload['time'].apply(lambda x: base_time + pd.Timedelta(seconds=float(x)))
+            else:
+                df_upload['timestamp'] = datetime.now()
+                
             if st.button("Sync CSV to Cloud"):
                 collection.insert_many(df_upload.to_dict('records'))
                 st.success("Cloud Synchronized! Refreshing...")
@@ -111,12 +118,16 @@ if data:
     
     with m_col1:
         st.subheader("📍 Geospatial Pollution Profile")
-        # Filter out 0.0 coordinates so the map stays focused on the actual flight path
-        valid_map_df = df[(df['lat'] != 0) & (df['lon'] != 0)]
         
-        fig_map = px.scatter_mapbox(valid_map_df, lat="lat", lon="lon", color="gas", size="alt",
-                                    color_continuous_scale="RdYlGn_r", size_max=15, zoom=14,
+        valid_map_df = df[(df['lat'] != 0) & (df['lon'] != 0)].copy()
+        # Prevent WebGL crash by ensuring size is never exactly 0
+        valid_map_df['alt_safe'] = valid_map_df['alt'].apply(lambda x: x if x > 0 else 0.1)
+        
+        fig_map = px.scatter_mapbox(valid_map_df, lat="lat", lon="lon", color="gas", size="alt_safe",
+                                    color_continuous_scale="RdYlGn_r", size_max=15, zoom=15,
                                     mapbox_style="carto-darkmatter")
+        fig_map.update_layout(height=500, margin={"r":0,"t":0,"l":0,"b":0}, paper_bgcolor="#161b22")
+        st.plotly_chart(fig_map, use_container_width=True)
 
     with m_col2:
         st.subheader("📈 Flight Analytics")
@@ -137,6 +148,7 @@ if data:
     edited_df = st.data_editor(df, key="data_editor", num_rows="dynamic", use_container_width=True)
     
     # Sync Logic
+    # Sync Logic
     if st.button("💾 Commit Changes to Cloud"):
         with st.spinner("Updating database..."):
             # 1. Handle Deletions (IDs that exist in MongoDB but were deleted from the UI)
@@ -147,21 +159,28 @@ if data:
             for del_id in deleted_ids:
                 collection.delete_one({"_id": ObjectId(del_id)})
             
-            # 2. Handle Modifications (Updates to existing rows)
-            # Find rows where values changed
-            comparison = df.compare(edited_df, keep_shape=True, keep_equal=False)
-            if not comparison.empty:
-                for index, row in edited_df.iterrows():
-                    # Only update if the row still exists and was modified
-                    if str(row['_id']) in original_ids:
-                        update_data = {
-                            "temp": row['temp'],
-                            "gas": row['gas'],
-                            "lat": row['lat'],
-                            "lon": row['lon'],
-                            "alt": row['alt']
-                        }
-                        collection.update_one({"_id": ObjectId(row['_id'])}, {"$set": update_data})
+            # 2. Handle Modifications (Safely checking only surviving rows)
+            df_idx = df.set_index('_id')
+            edit_idx = edited_df.dropna(subset=['_id']).set_index('_id')
+            common_ids = df_idx.index.intersection(edit_idx.index)
+            
+            for row_id in common_ids:
+                old_row = df_idx.loc[row_id]
+                new_row = edit_idx.loc[row_id]
+                
+                # Check if sensor values were modified
+                if (old_row['alt'] != new_row['alt'] or 
+                    old_row['gas'] != new_row['gas'] or 
+                    old_row['temp'] != new_row['temp']):
+                    
+                    update_data = {
+                        "temp": float(new_row['temp']),
+                        "gas": float(new_row['gas']),
+                        "lat": float(new_row['lat']),
+                        "lon": float(new_row['lon']),
+                        "alt": float(new_row['alt'])
+                    }
+                    collection.update_one({"_id": ObjectId(row_id)}, {"$set": update_data})
             
             st.success("Database successfully updated!")
             st.rerun()
