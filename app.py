@@ -20,7 +20,7 @@ st.markdown("""
     .main { background-color: #0e1117; color: #fafafa; }
     .stMetric { background-color: #161b22; border: 1px solid #30363d; padding: 15px; border-radius: 10px; }
     </style>
-    """, unsafe_content=True)
+    """, unsafe_allow_html=True)
 
 # --- SIDEBAR: MANUAL UPLOAD & STATUS ---
 with st.sidebar:
@@ -62,7 +62,7 @@ if data:
     df = pd.DataFrame(data)
     
     # --- UI LAYOUT ---
-    st.title("🛸 UAV Air Pollution Monitoring System")
+    st.title(" UAV Air Pollution Monitoring System")
     st.caption(f"Project by Muhammad Jassim Mahmoud | University of Technology") #
 
     # TOP ROW: THE GAUGES
