@@ -111,11 +111,12 @@ if data:
     
     with m_col1:
         st.subheader("📍 Geospatial Pollution Profile")
-        fig_map = px.scatter_mapbox(df, lat="lat", lon="lon", color="gas", size="alt",
-                                    color_continuous_scale="RdYlGn_r", size_max=15, zoom=13,
+        # Filter out 0.0 coordinates so the map stays focused on the actual flight path
+        valid_map_df = df[(df['lat'] != 0) & (df['lon'] != 0)]
+        
+        fig_map = px.scatter_mapbox(valid_map_df, lat="lat", lon="lon", color="gas", size="alt",
+                                    color_continuous_scale="RdYlGn_r", size_max=15, zoom=14,
                                     mapbox_style="carto-darkmatter")
-        fig_map.update_layout(height=500, margin={"r":0,"t":0,"l":0,"b":0}, paper_bgcolor="#161b22")
-        st.plotly_chart(fig_map, use_container_width=True)
 
     with m_col2:
         st.subheader("📈 Flight Analytics")
