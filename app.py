@@ -6,6 +6,7 @@ from bson.objectid import ObjectId
 import plotly.express as px
 import plotly.graph_objects as go
 import os
+import time
 
 # ==========================================
 # 1. DATABASE CONNECTION
@@ -37,14 +38,16 @@ with st.sidebar:
     st.caption("University of Technology | Evening Study Program")
     st.write("---")
     
+    # NEW: Live Auto-Refresh Toggle
+    live_mode = st.checkbox("🟢 Live Auto-Refresh (5s)", value=True)
+    st.write("---")
+    
     st.subheader("Manual Data Import")
     uploaded_file = st.file_uploader("Upload Flight CSV", type="csv")
     
     if uploaded_file is not None:
         try:
             df_upload = pd.read_csv(uploaded_file)
-            
-            # Spread timestamps out realistically using the flight seconds
             if 'time' in df_upload.columns:
                 base_time = datetime.now()
                 df_upload['timestamp'] = df_upload['time'].apply(lambda x: base_time + pd.Timedelta(seconds=float(x)))
@@ -85,7 +88,6 @@ if data:
     df = pd.DataFrame(data)
     df['_id'] = df['_id'].astype(str)
     
-    # Clean data to prevent chart crashes
     for col in ['alt', 'gas', 'temp', 'lat', 'lon']:
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors='coerce')
@@ -112,11 +114,11 @@ if data:
     col3.metric("Ambient Temp", f"{df['temp'].iloc[0]:.1f} °C")
     col4.metric("Peak Pollution", f"{df['gas'].max():.2f} V", "Hazard" if df['gas'].max() > 2.5 else "Safe")
 
-    # --- ROW 2: 2D & 3D GEOSPATIAL PROFILES ---
+    # --- ROW 2: 2D GEOSPATIAL & ANALYTICS ---
     m_col1, m_col2 = st.columns([1, 1])
     
     with m_col1:
-        st.subheader("📍 2D Pollution Map")
+        st.subheader("📍 Geospatial Pollution Profile")
         valid_map_df = df[(df['lat'] != 0) & (df['lon'] != 0)].copy()
         valid_map_df['alt_safe'] = valid_map_df['alt'].apply(lambda x: x if x > 0 else 0.1)
         
@@ -127,13 +129,15 @@ if data:
         st.plotly_chart(fig_map, use_container_width=True)
 
     with m_col2:
-        st.subheader("🌐 3D Flight Trajectory")
-        fig_3d = px.scatter_3d(valid_map_df, x='lat', y='lon', z='alt', color='gas',
-                               color_continuous_scale="RdYlGn_r", labels={'gas': 'Pollution (V)'})
-        # Force lines between the scatter points to draw the flight path
-        fig_3d.update_traces(mode='lines+markers', marker=dict(size=4), line=dict(width=3, color='rgba(150, 150, 150, 0.5)'))
-        fig_3d.update_layout(height=500, margin={"r":0,"t":0,"l":0,"b":0}, paper_bgcolor="#161b22")
-        st.plotly_chart(fig_3d, use_container_width=True)
+        st.subheader("📈 Flight Analytics")
+        # Restored the clear 2D line and area charts
+        fig_poll = px.area(df, x="timestamp", y="gas", title="Pollution Timeline", color_discrete_sequence=["#ff4b4b"])
+        fig_poll.update_layout(height=240, template="plotly_dark", margin=dict(l=0, r=0, t=30, b=0))
+        st.plotly_chart(fig_poll, use_container_width=True)
+        
+        fig_alt = px.line(df, x="timestamp", y="alt", title="Altitude Profile", color_discrete_sequence=["#00d4ff"])
+        fig_alt.update_layout(height=240, template="plotly_dark", margin=dict(l=0, r=0, t=30, b=0))
+        st.plotly_chart(fig_alt, use_container_width=True)
 
     # --- ROW 3: DATABASE MANAGER ---
     st.write("---")
@@ -145,11 +149,9 @@ if data:
             original_ids = set(df['_id'])
             new_ids = set(edited_df['_id'].dropna())
             
-            # Handle Deletions
             for del_id in (original_ids - new_ids):
                 collection.delete_one({"_id": ObjectId(del_id)})
             
-            # Handle Modifications
             df_idx = df.set_index('_id')
             edit_idx = edited_df.dropna(subset=['_id']).set_index('_id')
             common_ids = df_idx.index.intersection(edit_idx.index)
@@ -166,5 +168,13 @@ if data:
             
             st.success("Database successfully updated!")
             st.rerun()
+
 else:
     st.warning("Awaiting Data Stream. Ensure payload is transmitting.")
+
+# ==========================================
+# 5. AUTO-REFRESH LOGIC
+# ==========================================
+if 'live_mode' in locals() and live_mode:
+    time.sleep(5)
+    st.rerun()
