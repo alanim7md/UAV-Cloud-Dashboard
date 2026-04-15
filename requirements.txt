@@ -2,3 +2,4 @@ streamlit
 pymongo[srv]
 pandas
 plotly
+streamlit-autorefresh
